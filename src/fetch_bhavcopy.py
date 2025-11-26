@@ -1,21 +1,53 @@
 import requests
 import datetime
 
+BASE_URL = "https://archives.nseindia.com/content/fo/fo{date}bhav.DAT"
+
+HEADERS = {
+    "User-Agent": "Mozilla/5.0",
+    "Accept": "*/*",
+    "Referer": "https://www.nseindia.com"
+}
+
+def is_weekend(date):
+    # Monday = 0 ... Sunday = 6
+    return date.weekday() >= 5
+
+def try_download(date_str):
+    url = BASE_URL.format(date=date_str)
+    print(f"Trying: {url}")
+    resp = requests.get(url, headers=HEADERS)
+
+    if resp.status_code == 200:
+        print(f"✔ Found bhavcopy: {date_str}")
+        return resp.content
+
+    return None
+
+
 def fetch_dat():
-    today = datetime.datetime.now().strftime("%d%m%Y")
-    url = f"https://archives.nseindia.com/content/fo/fo{today}bhav.DAT"
+    """
+    Auto-detects the latest available DAT bhavcopy:
+    - Skips weekends
+    - Looks back up to 7 days
+    """
 
-    headers = {
-        "User-Agent": "Mozilla/5.0",
-        "Accept": "*/*",
-        "Referer": "https://www.nseindia.com"
-    }
+    today = datetime.datetime.now()
 
-    print("Downloading:", url)
-    resp = requests.get(url, headers=headers)
+    # Try last 7 days
+    for delta in range(0, 7):
+        day = today - datetime.timedelta(days=delta)
 
-    if resp.status_code != 200:
-        raise Exception(f"Failed to download DAT bhavcopy: {resp.status_code}")
+        # Skip Saturday & Sunday
+        if is_weekend(day):
+            print(f"Skipping weekend: {day.strftime('%d-%m-%Y')}")
+            continue
 
-    return resp.content
+        date_str = day.strftime("%d%m%Y")
+        data = try_download(date_str)
+
+        if data:
+            return data
+
+    raise Exception("No bhavcopy found for last 7 days!")
     
