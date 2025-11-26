@@ -1,14 +1,14 @@
 import pandas as pd
 import io
-import zipfile
 
 def parse_dat_bytes(raw_bytes):
-    with zipfile.ZipFile(io.BytesIO(raw_bytes)) as z:
-        fname = z.namelist()[0]
-        df = pd.read_csv(z.open(fname))
+    txt = raw_bytes.decode("utf-8", errors="ignore")
 
-    # Clean field names
+    df = pd.read_csv(
+        io.StringIO(txt),
+        sep="|"
+    )
+
     df.columns = df.columns.str.strip()
-
     return df
-  
+    
