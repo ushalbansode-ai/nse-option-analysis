@@ -116,38 +116,42 @@ def normalize_columns(df):
 # 4) SIGNAL CALCULATION
 # =====================================================
 def compute_signals(df):
-    # Convert important numeric columns safely (no TypeError)
+
+    # Ensure numeric columns
     numeric_cols = [
-        "TtlTradgVol", "TtlTrfVal", "OpnIntrst", "ChngInOpnIntrst",
-        "ClsPric", "PrvsClsgPric"
+        "TtlTradgVol", "TtlTrfVal", "OpnIntrst",
+        "ChngInOpnIntrst", "ClsPric", "PrvsClsgPric"
     ]
 
     for col in numeric_cols:
         df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
-    # --- Volume ratio ---
+    # Volume ratio
     df["vol_ratio"] = df["TtlTradgVol"] / (
         df["TtlTradgVol"].rolling(20).mean().fillna(df["TtlTradgVol"])
     )
 
-    # --- Value ratio ---
+    # Value ratio
     df["value_ratio"] = df["TtlTrfVal"] / (
         df["TtlTrfVal"].rolling(20).mean().fillna(df["TtlTrfVal"])
     )
 
-    # --- OI Change % ---
+    # OI Change %
     df["oi_change_pct"] = (
         df["ChngInOpnIntrst"] /
-        df["OpnIntrst"].replace(0, 1)   # prevent divide-by-zero
+        df["OpnIntrst"].replace(0, 1)     # avoid divide-by-zero
     )
 
-    # --- Price Change % ---
-    df["price_change_pct"] = (
-        df["ClsPric"] /
-        df["PrvsClsgPric"].replace(0, df["ClsPric"]) - 1
+    # ---- FIXED PART ----
+    df["prev_close_safe"] = df["PrvsClsgPric"].where(
+        df["PrvsClsgPric"] != 0,
+        df["ClsPric"]
     )
 
-    # --- Basic trading signals ---
+    df["price_change_pct"] = df["ClsPric"] / df["prev_close_safe"] - 1
+    # ----------------------
+
+    # Signals
     df["signal"] = "NO_TRADE"
 
     df.loc[
@@ -163,6 +167,7 @@ def compute_signals(df):
     ] = "SHORT_SELL"
 
     return df
+    
 
     
 # =====================================================
