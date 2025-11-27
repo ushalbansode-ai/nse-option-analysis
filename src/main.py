@@ -10,9 +10,12 @@ import pandas as pd
 
 BASE_URL = "https://archives.nseindia.com/content/fo/"
 OUT_DIR = "data/signals"
+
+# ---- Safe creation of directory without syntax errors ----
+try:
     os.makedirs(OUT_DIR, exist_ok=True)
-except FileExistsError:
-    pass  # ignore if the folder already exists
+except Exception:
+    pass
 
 # --- utils: flexible column mapper -----------------------------------------
 COL_ALIASES = {
