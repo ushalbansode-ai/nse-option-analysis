@@ -116,33 +116,38 @@ def normalize_columns(df):
 # 4) SIGNAL CALCULATION
 # =====================================================
 def compute_signals(df):
-    # Use only actual bhavcopy column names
+    # Convert important numeric columns safely (no TypeError)
+    numeric_cols = [
+        "TtlTradgVol", "TtlTrfVal", "OpnIntrst", "ChngInOpnIntrst",
+        "ClsPric", "PrvsClsgPric"
+    ]
 
-    # --- Volume ratio (current vol / 20-day avg vol) ---
-    df["vol_ratio"] = (
-        df["TtlTradgVol"].astype(float) /
-        df["TtlTradgVol"].astype(float).rolling(20).mean().fillna(df["TtlTradgVol"])
+    for col in numeric_cols:
+        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+
+    # --- Volume ratio ---
+    df["vol_ratio"] = df["TtlTradgVol"] / (
+        df["TtlTradgVol"].rolling(20).mean().fillna(df["TtlTradgVol"])
     )
 
-    # --- Value ratio (current value / 20-day avg value) ---
-    df["value_ratio"] = (
-        df["TtlTrfVal"].astype(float) /
-        df["TtlTrfVal"].astype(float).rolling(20).mean().fillna(df["TtlTrfVal"])
+    # --- Value ratio ---
+    df["value_ratio"] = df["TtlTrfVal"] / (
+        df["TtlTrfVal"].rolling(20).mean().fillna(df["TtlTrfVal"])
     )
 
     # --- OI Change % ---
     df["oi_change_pct"] = (
-        df["ChngInOpnIntrst"].astype(float) /
-        df["OpnIntrst"].replace(0, pd.NA).astype(float)
-    ).fillna(0)
+        df["ChngInOpnIntrst"] /
+        df["OpnIntrst"].replace(0, 1)   # prevent divide-by-zero
+    )
 
     # --- Price Change % ---
     df["price_change_pct"] = (
-        df["ClsPric"].astype(float) /
-        df["PrvsClsgPric"].replace(0, pd.NA).astype(float) - 1
-    ).fillna(0)
+        df["ClsPric"] /
+        df["PrvsClsgPric"].replace(0, df["ClsPric"]) - 1
+    )
 
-    # --- Basic buy/sell signals ---
+    # --- Basic trading signals ---
     df["signal"] = "NO_TRADE"
 
     df.loc[
@@ -158,6 +163,7 @@ def compute_signals(df):
     ] = "SHORT_SELL"
 
     return df
+
     
 # =====================================================
 # 5) MAIN EXECUTION LOGIC
