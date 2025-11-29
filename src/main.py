@@ -47,8 +47,9 @@ class SmartTradingCalendar:
 
 class EnhancedDataParser:
     def __init__(self):
-        self.futures_keywords = ['FUT', 'FUTSTK', 'FUTIDX']
-        self.options_keywords = ['OPT', 'OPTSTK', 'OPTIDX']
+        # NSE specific instrument types
+        self.futures_keywords = ['FUT', 'FUTSTK', 'FUTIDX', 'STF', 'IDF']  # Added STF, IDF
+        self.options_keywords = ['OPT', 'OPTSTK', 'OPTIDX', 'STO', 'IDO']  # Added STO, IDO
     
     def parse_instruments(self, df):
         """Parse futures and options contracts from NSE BhavCopy data"""
@@ -68,7 +69,7 @@ class EnhancedDataParser:
         if instrument_col not in df.columns:
             print("❌ 'FinInstrmTp' column not found. Trying alternative columns...")
             # Try alternative column names
-            alternative_cols = ['FININSTRMTP', 'fininstrmtp', 'Instrument']
+            alternative_cols = ['FININSTRMTP', 'fininstrmtp', 'Instrument', 'FinInstrmfp']
             for col in alternative_cols:
                 if col in df.columns:
                     instrument_col = col
@@ -79,25 +80,42 @@ class EnhancedDataParser:
                 return futures_df, options_df
 
         print(f"🔍 Using instrument column: {instrument_col}")
-        print(f"📊 Unique instruments: {df[instrument_col].unique()}")
+        unique_instruments = df[instrument_col].unique()
+        print(f"📊 Unique instruments: {unique_instruments}")
 
-        # Filter futures
-        futures_mask = df[instrument_col].isin(self.futures_keywords)
+        # Convert to string and handle NaN values
+        df[instrument_col] = df[instrument_col].astype(str)
+
+        # Enhanced filtering for NSE data
+        # Futures: STF (Stock Futures), IDF (Index Futures)
+        futures_mask = (
+            df[instrument_col].str.contains('FUT', case=False, na=False) |
+            df[instrument_col].str.contains('STF', case=False, na=False) |
+            df[instrument_col].str.contains('IDF', case=False, na=False)
+        )
+        
+        # Options: STO (Stock Options), IDO (Index Options)  
+        options_mask = (
+            df[instrument_col].str.contains('OPT', case=False, na=False) |
+            df[instrument_col].str.contains('STO', case=False, na=False) |
+            df[instrument_col].str.contains('IDO', case=False, na=False) |
+            df[instrument_col].str.contains('CE', case=False, na=False) |  # Call options
+            df[instrument_col].str.contains('PE', case=False, na=False)    # Put options
+        )
+
         if futures_mask.any():
             futures_df = df[futures_mask].copy()
             print(f"✅ Found {len(futures_df)} futures contracts")
+            # Show sample futures
+            if 'TckrSymb' in futures_df.columns:
+                print(f"📊 Futures sample: {futures_df['TckrSymb'].head(5).tolist()}")
 
-        # Filter options
-        options_mask = df[instrument_col].isin(self.options_keywords)
         if options_mask.any():
             options_df = df[options_mask].copy()
             print(f"✅ Found {len(options_df)} options contracts")
-
-        # Show samples if data found
-        if len(futures_df) > 0:
-            print(f"📊 Futures sample: {futures_df['TckrSymb'].head(3).tolist()}")
-        if len(options_df) > 0:
-            print(f"📊 Options sample: {options_df['TckrSymb'].head(3).tolist()}")
+            # Show sample options
+            if 'TckrSymb' in options_df.columns:
+                print(f"📊 Options sample: {options_df['TckrSymb'].head(5).tolist()}")
 
         return futures_df, options_df
 
@@ -137,68 +155,106 @@ def main():
         # Use enhanced parser for NSE data
         futures_df, options_df = parser.parse_instruments(df)
         
-        # Fallback to original processor if enhanced parser finds nothing
+        # If still no data found, try a more aggressive parsing approach
         if len(futures_df) == 0 and len(options_df) == 0:
-            print("🔄 Using original parser as fallback...")
-            try:
-                futures_df, options_df = processor.separate_futures_options(df)
-            except Exception as e:
-                print(f"❌ Original parser also failed: {e}")
-
+            print("🔄 No instruments found with enhanced parser. Trying aggressive parsing...")
+            futures_df, options_df = self.try_aggressive_parsing(df)
+        
         print(f"✅ Final count - Futures: {len(futures_df)}, Options: {len(options_df)}")
 
-        # Step 3: Load PREVIOUS day data
-        print("\n📚 Step 3: Loading PREVIOUS day data for comparison...")
-        prev_futures, prev_options, prev_date = historical_mgr.load_previous_data(current_date)
-        
-        if prev_futures is not None:
-            print(f"✅ PREVIOUS DAY DATA: {prev_date} - {len(prev_futures)} futures, {len(prev_options)} options")
-            historical_status = "AVAILABLE"
-        else:
-            print("⚠️ PREVIOUS DAY DATA: Not available (first run or weekend)")
-            historical_status = "UNAVAILABLE"
-            prev_date = None
-        
-        # Step 4: Save CURRENT day data for future use
-        print("\n💾 Step 4: Saving CURRENT day data for future analysis...")
-        historical_mgr.save_daily_data(futures_df, options_df, current_date)
-        
-        # Step 5: Run ENHANCED COMBINED analysis
-        print("\n🎯 Step 5: Running ENHANCED COMBINED ANALYSIS...")
-        print("   📅 Comparing PREVIOUS vs CURRENT day data...")
-        print("   📈 Analyzing Futures trends with historical context...")
-        print("   📊 Confirming with Options activity patterns...")
-        print("   🎯 Generating FINAL VERDICT with data quality scores...")
-        
-        combined_opportunities = analyzer.analyze_combined(futures_df, options_df, prev_futures, prev_options)
-        
-        # Step 6: Generate comprehensive reports
-        print("\n📊 Step 6: Generating enhanced reports...")
-        reporter.generate_enhanced_reports(combined_opportunities, futures_df, options_df, current_date, prev_date, historical_status)
-        
-        # Final summary with historical context
-        print(f"\n✅ ENHANCED ANALYSIS COMPLETED SUCCESSFULLY!")
-        print(f"📈 Historical Data: {historical_status}")
-        
-        if len(combined_opportunities) > 0:
-            buy_calls = len(combined_opportunities[combined_opportunities['recommendation'].str.contains('CALL')])
-            buy_puts = len(combined_opportunities[combined_opportunities['recommendation'].str.contains('PUT')])
-            high_conf = len(combined_opportunities[combined_opportunities['confidence'] == 'High'])
-            high_quality = len(combined_opportunities[combined_opportunities['data_quality'] == 'HIGH'])
+        # If we have data, proceed with analysis
+        if len(futures_df) > 0 and len(options_df) > 0:
+            # Step 3: Load PREVIOUS day data
+            print("\n📚 Step 3: Loading PREVIOUS day data for comparison...")
+            prev_futures, prev_options, prev_date = historical_mgr.load_previous_data(current_date)
             
-            print(f"🎯 FINAL VERDICT: {buy_calls} CALL buys, {buy_puts} PUT buys")
-            print(f"   🔥 High Confidence: {high_conf}")
-            print(f"   📊 High Quality Data: {high_quality}")
+            if prev_futures is not None:
+                print(f"✅ PREVIOUS DAY DATA: {prev_date} - {len(prev_futures)} futures, {len(prev_options)} options")
+                historical_status = "AVAILABLE"
+            else:
+                print("⚠️ PREVIOUS DAY DATA: Not available (first run or weekend)")
+                historical_status = "UNAVAILABLE"
+                prev_date = None
+            
+            # Step 4: Save CURRENT day data for future use
+            print("\n💾 Step 4: Saving CURRENT day data for future analysis...")
+            historical_mgr.save_daily_data(futures_df, options_df, current_date)
+            
+            # Step 5: Run ENHANCED COMBINED analysis
+            print("\n🎯 Step 5: Running ENHANCED COMBINED ANALYSIS...")
+            print("   📅 Comparing PREVIOUS vs CURRENT day data...")
+            print("   📈 Analyzing Futures trends with historical context...")
+            print("   📊 Confirming with Options activity patterns...")
+            print("   🎯 Generating FINAL VERDICT with data quality scores...")
+            
+            combined_opportunities = analyzer.analyze_combined(futures_df, options_df, prev_futures, prev_options)
+            
+            # Step 6: Generate comprehensive reports
+            print("\n📊 Step 6: Generating enhanced reports...")
+            reporter.generate_enhanced_reports(combined_opportunities, futures_df, options_df, current_date, prev_date, historical_status)
+            
+            # Final summary with historical context
+            print(f"\n✅ ENHANCED ANALYSIS COMPLETED SUCCESSFULLY!")
+            print(f"📈 Historical Data: {historical_status}")
+            
+            if len(combined_opportunities) > 0:
+                buy_calls = len(combined_opportunities[combined_opportunities['recommendation'].str.contains('CALL')])
+                buy_puts = len(combined_opportunities[combined_opportunities['recommendation'].str.contains('PUT')])
+                high_conf = len(combined_opportunities[combined_opportunities['confidence'] == 'High'])
+                high_quality = len(combined_opportunities[combined_opportunities['data_quality'] == 'HIGH'])
+                
+                print(f"🎯 FINAL VERDICT: {buy_calls} CALL buys, {buy_puts} PUT buys")
+                print(f"   🔥 High Confidence: {high_conf}")
+                print(f"   📊 High Quality Data: {high_quality}")
+            else:
+                print("🎯 FINAL VERDICT: No strong opportunities identified today")
+                if historical_status == "UNAVAILABLE":
+                    print("   💡 Tip: Run again tomorrow for historical data comparison")
         else:
-            print("🎯 FINAL VERDICT: No strong opportunities identified today")
-            if historical_status == "UNAVAILABLE":
-                print("   💡 Tip: Run again tomorrow for historical data comparison")
+            print("❌ No futures or options data found. Cannot proceed with analysis.")
+            print("💡 Possible reasons:")
+            print("   - Market holiday or no trading activity")
+            print("   - Data format has changed")
+            print("   - Instrument types not recognized")
         
     except Exception as e:
         print(f"\n❌ Error: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)
+
+def try_aggressive_parsing(self, df):
+    """More aggressive approach to find futures and options"""
+    futures_df = pd.DataFrame()
+    options_df = pd.DataFrame()
+    
+    print("🔄 Trying aggressive parsing based on ticker patterns...")
+    
+    if 'TckrSymb' not in df.columns:
+        print("❌ No TckrSymb column for aggressive parsing")
+        return futures_df, options_df
+    
+    # Look for futures patterns in ticker symbols
+    futures_patterns = ['FUT', 'FUTURES', 'STF', 'IDF']
+    options_patterns = ['OPT', 'OPTION', 'STO', 'IDO', 'CE', 'PE']
+    
+    for pattern in futures_patterns:
+        mask = df['TckrSymb'].astype(str).str.contains(pattern, case=False, na=False)
+        if mask.any():
+            futures_df = pd.concat([futures_df, df[mask]], ignore_index=True)
+            print(f"✅ Found {mask.sum()} futures with pattern: {pattern}")
+    
+    for pattern in options_patterns:
+        mask = df['TckrSymb'].astype(str).str.contains(pattern, case=False, na=False)
+        if mask.any():
+            options_df = pd.concat([options_df, df[mask]], ignore_index=True)
+            print(f"✅ Found {mask.sum()} options with pattern: {pattern}")
+    
+    # Remove duplicates
+    futures_df = futures_df.drop_duplicates()
+    options_df = options_df.drop_duplicates()
+    
+    return futures_df, options_df
 
 if __name__ == "__main__":
     main()
