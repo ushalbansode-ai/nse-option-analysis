@@ -1,379 +1,285 @@
-"""
-Enhanced Combined Futures + Options Analyzer with Previous Day Data
-"""
-
 import pandas as pd
-import datetime
-from collections import defaultdict
+import numpy as np
+from datetime import datetime, timedelta
 
 class CombinedAnalyzer:
     def __init__(self, historical_manager):
         self.historical_manager = historical_manager
     
     def analyze_combined(self, futures_df, options_df, prev_futures=None, prev_options=None):
-        """
-        Enhanced combined analysis using BOTH current and previous day data
-        """
-        opportunities = []
+        """Enhanced combined analysis with correct NSE column names"""
         
-        print("🔍 Running ENHANCED COMBINED ANALYSIS...")
-        print(f"   📅 Current data: {len(futures_df)} futures, {len(options_df)} options")
-        print(f"   📅 Previous data: {len(prev_futures) if prev_futures is not None else 0} futures")
+        if futures_df.empty or options_df.empty:
+            print("❌ No data available for analysis")
+            return pd.DataFrame()
         
-        # Create option chain structure
-        option_chain = self._create_option_chain(options_df, futures_df)
+        print("🔍 Using NSE BhavCopy column structure...")
+        print(f"Futures columns: {futures_df.columns.tolist()}")
+        print(f"Options columns: {options_df.columns.tolist()}")
         
-        # Calculate ACTUAL changes from previous day data
-        if prev_futures is not None:
-            print("📈 Using ACTUAL historical data for comparisons...")
-            oi_changes = self.historical_manager.calculate_oi_change(futures_df, prev_futures)
-            volume_changes = self.historical_manager.calculate_volume_change(futures_df, prev_futures)
-            price_changes = self.historical_manager.calculate_price_change(futures_df, prev_futures)
-            data_source = "HISTORICAL"
-        else:
-            print("⚠️ Using CURRENT DAY data only (no historical data available)")
-            oi_changes = self._calculate_current_day_changes(futures_df)
-            volume_changes = self._calculate_current_day_volume(futures_df)
-            price_changes = self._calculate_current_day_price(futures_df)
-            data_source = "CURRENT_ONLY"
+        # Map column names to standard ones
+        futures_df = self.standardize_column_names(futures_df, 'futures')
+        options_df = self.standardize_column_names(options_df, 'options')
         
-        # Analyze each underlying with BOTH current and previous data
-        analyzed_count = 0
-        for _, future in futures_df.iterrows():
-            symbol = future['underlying']
-            
-            if symbol not in option_chain:
-                continue  # Skip if no options data for this symbol
-            
-            analyzed_count += 1
-            
-            # Get data changes
-            price_data = price_changes.get(symbol, {})
-            oi_data = oi_changes.get(symbol, {})
-            volume_data = volume_changes.get(symbol, {})
-            
-            current_price = price_data.get('current_price', future['LastPric'])
-            price_change_pct = price_data.get('change_percentage', 0)
-            oi_change_pct = oi_data.get('percentage_change', 0)
-            volume_change_pct = volume_data.get('change_percentage', 0)
-            has_historical = oi_data.get('has_historical_data', False)
-            
-            # Analyze options data for this symbol
-            options_analysis = self._analyze_options_for_symbol(symbol, option_chain, current_price, prev_options)
-            
-            # Generate COMBINED verdict with historical context
-            combined_opportunity = self._generate_combined_verdict(
-                symbol, future, options_analysis, 
-                price_change_pct, oi_change_pct, volume_change_pct,
-                current_price, has_historical, data_source
-            )
-            
-            if combined_opportunity:
-                opportunities.append(combined_opportunity)
+        print("✅ Standardized column names for analysis")
         
-        print(f"✅ Analyzed {analyzed_count} symbols with options data")
-        return pd.DataFrame(opportunities)
+        # Create option chains
+        print("🔗 Creating option chains...")
+        option_chains = self.create_option_chain(options_df, futures_df)
+        
+        if option_chains is None:
+            return pd.DataFrame()
+        
+        # Analyze opportunities
+        opportunities = self.identify_opportunities(futures_df, option_chains, prev_futures)
+        
+        return opportunities
     
-    def _calculate_current_day_changes(self, futures_df):
-        """Calculate changes using only current day data"""
-        oi_changes = {}
-        for _, future in futures_df.iterrows():
-            symbol = future['underlying']
-            current_oi = future['OpnIntrst']
-            oi_change = future['ChngInOpnIntrst']
-            oi_change_pct = (oi_change / current_oi) * 100 if current_oi > 0 else 0
-            
-            oi_changes[symbol] = {
-                'absolute_change': oi_change,
-                'percentage_change': oi_change_pct,
-                'current_oi': current_oi,
-                'previous_oi': current_oi - oi_change,
-                'has_historical_data': False
+    def standardize_column_names(self, df, data_type):
+        """Standardize NSE BhavCopy column names to our expected format"""
+        
+        # NSE BhavCopy column mappings based on your provided structure
+        column_mappings = {
+            'futures': {
+                'symbol': ['TckrSymb'],
+                'underlying': ['UndrlygPric'],  # This is the key fix - using correct column name
+                'lastPrice': ['LastPric'],
+                'openInterest': ['OpnIntrst'],
+                'volume': ['TtlTradgVol'],
+                'highPrice': ['HghPric'],
+                'lowPrice': ['LwPric'],
+                'openPrice': ['OpnPric'],
+                'closePrice': ['ClsPric'],
+                'settlementPrice': ['SttlmPric']
+            },
+            'options': {
+                'symbol': ['TckrSymb'],
+                'underlying': ['UndrlygPric'],  # This is the key fix - using correct column name
+                'strikePrice': ['StrkPric'],
+                'optionType': ['OptnTp'],
+                'lastPrice': ['LastPric'],
+                'openInterest': ['OpnIntrst'],
+                'volume': ['TtlTradgVol'],
+                'highPrice': ['HghPric'],
+                'lowPrice': ['LwPric'],
+                'openPrice': ['OpnPric'],
+                'closePrice': ['ClsPric'],
+                'settlementPrice': ['SttlmPric']
             }
-        return oi_changes
-    
-    def _calculate_current_day_volume(self, futures_df):
-        """Calculate volume using only current day data"""
-        volume_changes = {}
-        for _, future in futures_df.iterrows():
-            symbol = future['underlying']
-            current_volume = future['TtlTradgVol']
-            
-            volume_changes[symbol] = {
-                'current_volume': current_volume,
-                'previous_volume': current_volume,  # Assume same without historical
-                'absolute_change': 0,
-                'change_percentage': 0,
-                'has_historical_data': False
-            }
-        return volume_changes
-    
-    def _calculate_current_day_price(self, futures_df):
-        """Calculate price changes using only current day data"""
-        price_changes = {}
-        for _, future in futures_df.iterrows():
-            symbol = future['underlying']
-            current_price = future['LastPric']
-            prev_close = future['PrvsClsgPric']
-            price_change = current_price - prev_close
-            price_change_pct = (price_change / prev_close) * 100 if prev_close > 0 else 0
-            
-            price_changes[symbol] = {
-                'current_price': current_price,
-                'previous_close': prev_close,
-                'absolute_change': price_change,
-                'change_percentage': price_change_pct,
-                'has_historical_data': False
-            }
-        return price_changes
-    
-    def _create_option_chain(self, options_df, futures_df):
-        """Create option chain structure"""
-        option_chain = defaultdict(lambda: defaultdict(dict))
-        underlying_prices = {}
-        
-        # Get current prices from futures
-        for _, future in futures_df.iterrows():
-            underlying_prices[future['underlying']] = future['LastPric']
-        
-        # Organize options
-        for _, option in options_df.iterrows():
-            underlying = option['underlying']
-            strike = option['strike']
-            option_type = option['option_type']
-            expiry = option.get('expiry_str', 'UNKNOWN')
-            
-            if underlying not in underlying_prices:
-                continue
-                
-            current_price = underlying_prices[underlying]
-            
-            option_chain[underlying][expiry][(strike, option_type)] = {
-                'last_price': option['LastPric'],
-                'oi': option['OpnIntrst'],
-                'oi_change': option['ChngInOpnIntrst'],
-                'volume': option['TtlTradgVol'],
-                'prev_close': option['PrvsClsgPric'],
-                'distance_from_spot': abs(current_price - strike),
-                'is_ATM': abs(current_price - strike) / current_price < 0.02,
-                'is_ITM': (option_type == 'CE' and strike < current_price) or 
-                         (option_type == 'PE' and strike > current_price)
-            }
-        
-        return option_chain
-    
-    def _analyze_options_for_symbol(self, symbol, option_chain, current_price, prev_options=None):
-        """Analyze options data for a specific symbol with historical context"""
-        analysis = {
-            'call_oi_trend': 0,
-            'put_oi_trend': 0,
-            'call_volume': 0,
-            'put_volume': 0,
-            'atm_call_oi_change': 0,
-            'atm_put_oi_change': 0,
-            'max_pain': None,
-            'oi_ratio': 0,
-            'pcr_oi': 0,
-            'has_historical_options': prev_options is not None
         }
         
-        if symbol not in option_chain:
-            return analysis
+        mappings = column_mappings.get(data_type, {})
+        standardized_df = df.copy()
         
-        symbol_chain = option_chain[symbol]
+        for standard_name, possible_names in mappings.items():
+            for possible_name in possible_names:
+                if possible_name in df.columns:
+                    if standard_name != possible_name:
+                        standardized_df[standard_name] = df[possible_name]
+                        print(f"   🔄 Mapped '{possible_name}' -> '{standard_name}'")
+                    break
         
-        # Analyze all expiries
-        for expiry, strikes in symbol_chain.items():
-            total_call_oi = 0
-            total_put_oi = 0
-            total_call_oi_change = 0
-            total_put_oi_change = 0
-            total_call_volume = 0
-            total_put_volume = 0
+        return standardized_df
+    
+    def create_option_chain(self, options_df, futures_df):
+        """Create option chain with proper error handling"""
+        
+        try:
+            # Check if required columns exist after standardization
+            required_columns = ['underlying', 'strikePrice', 'optionType', 'lastPrice', 'openInterest']
             
-            strike_oi = {}
+            missing_columns = [col for col in required_columns if col not in options_df.columns]
+            if missing_columns:
+                print(f"❌ Missing required columns in options: {missing_columns}")
+                print(f"✅ Available columns: {options_df.columns.tolist()}")
+                return None
             
-            for (strike, opt_type), data in strikes.items():
-                if opt_type == 'CE':
-                    total_call_oi += data['oi']
-                    total_call_oi_change += data['oi_change']
-                    total_call_volume += data['volume']
-                else:  # PE
-                    total_put_oi += data['oi']
-                    total_put_oi_change += data['oi_change']
-                    total_put_volume += data['volume']
-                
-                # Track for max pain
-                if strike not in strike_oi:
-                    strike_oi[strike] = {'call_oi': 0, 'put_oi': 0}
-                strike_oi[strike][f'{opt_type.lower()}_oi'] += data['oi']
-                
-                # Track ATM changes
-                if data.get('is_ATM', False):
-                    if opt_type == 'CE':
-                        analysis['atm_call_oi_change'] += data['oi_change']
-                    else:
-                        analysis['atm_put_oi_change'] += data['oi_change']
+            if 'underlying' not in futures_df.columns or 'lastPrice' not in futures_df.columns:
+                print(f"❌ Missing required columns in futures")
+                print(f"✅ Available columns: {futures_df.columns.tolist()}")
+                return None
+            
+            print("🔗 Grouping options by underlying symbol...")
+            
+            # Get unique underlying symbols from options
+            unique_underlyings = options_df['underlying'].unique()
+            print(f"📊 Found {len(unique_underlyings)} underlying symbols")
+            
+            option_chains = {}
+            for underlying in unique_underlyings[:10]:  # Limit to first 10 for demo
+                chain_options = options_df[options_df['underlying'] == underlying]
+                analysis = self.analyze_single_chain(chain_options, futures_df, underlying)
+                if analysis:
+                    option_chains[underlying] = analysis
+            
+            return option_chains
+            
+        except Exception as e:
+            print(f"❌ Error creating option chain: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+    
+    def analyze_single_chain(self, chain_options, futures_df, underlying_symbol):
+        """Analyze a single option chain"""
+        try:
+            # Find corresponding future price
+            future_rows = futures_df[futures_df['symbol'] == underlying_symbol]
+            if future_rows.empty:
+                # Try to find by matching the first part of the symbol
+                base_symbol = underlying_symbol.split('-')[0] if '-' in underlying_symbol else underlying_symbol
+                future_rows = futures_df[futures_df['symbol'].str.startswith(base_symbol)]
+            
+            if future_rows.empty:
+                print(f"⚠️ No future found for underlying: {underlying_symbol}")
+                return None
+            
+            underlying_price = future_rows['lastPrice'].iloc[0]
+            
+            # Separate calls and puts
+            calls = chain_options[chain_options['optionType'] == 'CE']
+            puts = chain_options[chain_options['optionType'] == 'PE']
+            
+            analysis_result = {
+                'underlying': underlying_symbol,
+                'underlying_price': float(underlying_price),
+                'total_oi': int(chain_options['openInterest'].sum()),
+                'call_oi': int(calls['openInterest'].sum()),
+                'put_oi': int(puts['openInterest'].sum()),
+                'call_volume': int(calls['volume'].sum()) if 'volume' in chain_options.columns else 0,
+                'put_volume': int(puts['volume'].sum()) if 'volume' in chain_options.columns else 0,
+                'total_volume': int(chain_options['volume'].sum()) if 'volume' in chain_options.columns else 0
+            }
             
             # Calculate OI ratios
-            if total_put_oi > 0:
-                analysis['oi_ratio'] = total_call_oi / total_put_oi
-            if total_call_oi > 0:
-                analysis['pcr_oi'] = total_put_oi / total_call_oi
-            
-            analysis['call_oi_trend'] = total_call_oi_change
-            analysis['put_oi_trend'] = total_put_oi_change
-            analysis['call_volume'] = total_call_volume
-            analysis['put_volume'] = total_put_volume
-            
-            # Calculate max pain
-            if strike_oi:
-                max_pain_strike = None
-                min_net_oi = float('inf')
-                
-                for strike, ois in strike_oi.items():
-                    net_oi = abs(ois['call_oi'] - ois['put_oi'])
-                    if net_oi < min_net_oi:
-                        min_net_oi = net_oi
-                        max_pain_strike = strike
-                
-                analysis['max_pain'] = max_pain_strike
-        
-        return analysis
-    
-    def _generate_combined_verdict(self, symbol, future, options_analysis, 
-                                 price_change_pct, oi_change_pct, volume_change_pct,
-                                 current_price, has_historical, data_source):
-        """
-        Generate FINAL VERDICT by combining current and previous day data
-        """
-        
-        # Extract options data
-        call_oi_trend = options_analysis['call_oi_trend']
-        put_oi_trend = options_analysis['put_oi_trend']
-        oi_ratio = options_analysis['oi_ratio']
-        max_pain = options_analysis['max_pain']
-        atm_call_oi_change = options_analysis['atm_call_oi_change']
-        atm_put_oi_change = options_analysis['atm_put_oi_change']
-        has_historical_options = options_analysis['has_historical_options']
-        
-        # Data quality indicator
-        data_quality = "HIGH" if has_historical and has_historical_options else "MEDIUM" if has_historical else "LOW"
-        
-        # STRONG BULLISH SIGNAL: Previous vs Current Day Analysis
-        strong_bullish = (
-            price_change_pct > 1.0 and           # Price up significantly
-            oi_change_pct > 5.0 and              # OI increase (long buildup)
-            volume_change_pct > 25.0 and         # Volume spike
-            call_oi_trend > 0 and                # Call OI increasing
-            put_oi_trend < 0 and                 # Put OI decreasing
-            oi_ratio > 1.2 and                   # More calls than puts
-            has_historical                       # Has proper historical data
-        )
-        
-        # STRONG BEARISH SIGNAL: Previous vs Current Day Analysis
-        strong_bearish = (
-            price_change_pct < -1.0 and          # Price down significantly
-            oi_change_pct > 5.0 and              # OI increase (short buildup)
-            volume_change_pct > 25.0 and         # Volume spike
-            put_oi_trend > 0 and                 # Put OI increasing
-            call_oi_trend < 0 and                # Call OI decreasing
-            oi_ratio < 0.8 and                   # More puts than calls
-            has_historical                       # Has proper historical data
-        )
-        
-        # MODERATE BULLISH: Weaker signals or missing historical data
-        moderate_bullish = (
-            price_change_pct > 0.5 and
-            (oi_change_pct > 2.0 or not has_historical) and
-            call_oi_trend > 0 and
-            (max_pain is None or current_price > max_pain)
-        )
-        
-        # MODERATE BEARISH: Weaker signals or missing historical data
-        moderate_bearish = (
-            price_change_pct < -0.5 and
-            (oi_change_pct > 2.0 or not has_historical) and
-            put_oi_trend > 0 and
-            (max_pain is None or current_price < max_pain)
-        )
-        
-        # Generate verdict with data source info
-        opportunity = None
-        
-        if strong_bullish:
-            opportunity = self._create_opportunity(
-                symbol, "STRONG BULLISH", "BUY CALL", 
-                price_change_pct, oi_change_pct, volume_change_pct,
-                call_oi_trend, put_oi_trend, current_price, max_pain,
-                f"Futures: Long Build-up + Options: Call OI↑ Put OI↓ + Volume Spike | Data: {data_source}",
-                "High", data_quality, has_historical
-            )
-        
-        elif strong_bearish:
-            opportunity = self._create_opportunity(
-                symbol, "STRONG BEARISH", "BUY PUT", 
-                price_change_pct, oi_change_pct, volume_change_pct,
-                call_oi_trend, put_oi_trend, current_price, max_pain,
-                f"Futures: Short Build-up + Options: Put OI↑ Call OI↓ + Volume Spike | Data: {data_source}",
-                "High", data_quality, has_historical
-            )
-        
-        elif moderate_bullish:
-            opportunity = self._create_opportunity(
-                symbol, "MODERATE BULLISH", "BUY CALL", 
-                price_change_pct, oi_change_pct, volume_change_pct,
-                call_oi_trend, put_oi_trend, current_price, max_pain,
-                f"Futures: Price↑ OI↑ + Options: Call OI↑ + Above Max Pain | Data: {data_source}",
-                "Medium", data_quality, has_historical
-            )
-        
-        elif moderate_bearish:
-            opportunity = self._create_opportunity(
-                symbol, "MODERATE BEARISH", "BUY PUT", 
-                price_change_pct, oi_change_pct, volume_change_pct,
-                call_oi_trend, put_oi_trend, current_price, max_pain,
-                f"Futures: Price↓ OI↑ + Options: Put OI↑ + Below Max Pain | Data: {data_source}",
-                "Medium", data_quality, has_historical
-            )
-        
-        return opportunity
-    
-    def _create_opportunity(self, symbol, setup, recommendation, 
-                          price_change_pct, oi_change_pct, volume_change_pct,
-                          call_oi_trend, put_oi_trend, current_price, max_pain,
-                          reason, confidence, data_quality, has_historical):
-        """Create enhanced opportunity dictionary with historical context"""
-        
-        opportunity = {
-            'symbol': symbol,
-            'setup': setup,
-            'recommendation': recommendation,
-            'current_price': current_price,
-            'price_change_pct': price_change_pct,
-            'oi_change_pct': oi_change_pct,
-            'volume_change_pct': volume_change_pct,
-            'call_oi_change': call_oi_trend,
-            'put_oi_change': put_oi_trend,
-            'max_pain': max_pain,
-            'reason': reason,
-            'confidence': confidence,
-            'data_quality': data_quality,
-            'has_historical_data': has_historical,
-            'analysis_type': 'ENHANCED_COMBINED',
-            'timestamp': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        }
-        
-        # Add strike guidance based on recommendation and confidence
-        if 'CALL' in recommendation:
-            if confidence == 'High':
-                opportunity['strike_guidance'] = f"ATM to slightly OTM ({current_price:.2f} to {current_price*1.05:.2f})"
+            if analysis_result['put_oi'] > 0:
+                analysis_result['oi_ratio'] = analysis_result['call_oi'] / analysis_result['put_oi']
             else:
-                opportunity['strike_guidance'] = f"ATM around {current_price:.2f}"
-        else:  # PUT
-            if confidence == 'High':
-                opportunity['strike_guidance'] = f"ATM to slightly OTM ({current_price:.2f} to {current_price*0.95:.2f})"
-            else:
-                opportunity['strike_guidance'] = f"ATM around {current_price:.2f}"
+                analysis_result['oi_ratio'] = float('inf')
+            
+            print(f"   📈 {underlying_symbol}: Price={underlying_price}, CallOI={analysis_result['call_oi']}, PutOI={analysis_result['put_oi']}")
+            
+            return analysis_result
+            
+        except Exception as e:
+            print(f"❌ Error analyzing chain for {underlying_symbol}: {e}")
+            return None
+    
+    def identify_opportunities(self, futures_df, option_chains, prev_futures):
+        """Identify trading opportunities based on option chain analysis"""
+        opportunities = []
         
-        return opportunity
+        try:
+            print("🎯 Identifying trading opportunities...")
+            
+            for symbol, chain_data in option_chains.items():
+                if chain_data is None:
+                    continue
+                
+                # Basic opportunity analysis based on OI ratios and price action
+                opportunity = {
+                    'symbol': symbol,
+                    'current_price': chain_data['underlying_price'],
+                    'call_oi': chain_data['call_oi'],
+                    'put_oi': chain_data['put_oi'],
+                    'total_oi': chain_data['total_oi'],
+                    'oi_ratio': chain_data['oi_ratio'],
+                    'call_volume': chain_data['call_volume'],
+                    'put_volume': chain_data['put_volume'],
+                    'total_volume': chain_data['total_volume'],
+                    'setup': self.identify_setup(chain_data),
+                    'recommendation': self.generate_recommendation(chain_data),
+                    'confidence': self.calculate_confidence(chain_data),
+                    'strike_guidance': self.suggest_strikes(chain_data),
+                    'reason': self.generate_reason(chain_data),
+                    'data_quality': 'HIGH' if prev_futures is not None else 'LOW',
+                    'has_historical_data': prev_futures is not None,
+                    'price_change_pct': 0.0,  # Would need previous data for this
+                    'oi_change_pct': 0.0,     # Would need previous data for this
+                    'volume_change_pct': 0.0, # Would need previous data for this
+                    'max_pain': self.calculate_max_pain(chain_data)
+                }
+                
+                opportunities.append(opportunity)
+            
+            print(f"✅ Identified {len(opportunities)} potential opportunities")
+            return pd.DataFrame(opportunities)
+            
+        except Exception as e:
+            print(f"❌ Error identifying opportunities: {e}")
+            import traceback
+            traceback.print_exc()
+            return pd.DataFrame()
+    
+    def identify_setup(self, chain_data):
+        """Identify the trading setup based on OI analysis"""
+        oi_ratio = chain_data['oi_ratio']
+        
+        if oi_ratio > 2.0:
+            return "Put Writing Dominance"
+        elif oi_ratio > 1.5:
+            return "Call Writing Pressure"
+        elif oi_ratio < 0.5:
+            return "Call Writing Dominance"
+        elif oi_ratio < 0.7:
+            return "Put Writing Pressure"
+        else:
+            return "Neutral OI Balance"
+    
+    def generate_recommendation(self, chain_data):
+        """Generate trading recommendation"""
+        setup = self.identify_setup(chain_data)
+        
+        if "Put Writing" in setup and "Dominance" in setup:
+            return "STRONG CALL"
+        elif "Call Writing" in setup and "Dominance" in setup:
+            return "STRONG PUT"
+        elif "Put Writing" in setup:
+            return "CALL"
+        elif "Call Writing" in setup:
+            return "PUT"
+        else:
+            return "NEUTRAL"
+    
+    def calculate_confidence(self, chain_data):
+        """Calculate confidence level"""
+        oi_ratio = chain_data['oi_ratio']
+        total_oi = chain_data['total_oi']
+        
+        if (oi_ratio > 2.0 or oi_ratio < 0.5) and total_oi > 100000:
+            return "High"
+        elif (oi_ratio > 1.5 or oi_ratio < 0.7) and total_oi > 50000:
+            return "Medium"
+        else:
+            return "Low"
+    
+    def suggest_strikes(self, chain_data):
+        """Suggest strike prices for trading"""
+        price = chain_data['underlying_price']
+        
+        # Round to nearest strike interval (usually 50 or 100 for NSE)
+        if price > 1000:
+            interval = 100
+        elif price > 500:
+            interval = 50
+        else:
+            interval = 20
+        
+        atm_strike = round(price / interval) * interval
+        return f"ATM: {atm_strike}, OTM: {atm_strike + interval}"
+    
+    def generate_reason(self, chain_data):
+        """Generate reason for recommendation"""
+        setup = self.identify_setup(chain_data)
+        oi_ratio = chain_data['oi_ratio']
+        
+        if oi_ratio > 1:
+            return f"Call OI {oi_ratio:.1f}x higher than Put OI - {setup}"
+        else:
+            return f"Put OI {1/oi_ratio:.1f}x higher than Call OI - {setup}"
+    
+    def calculate_max_pain(self, chain_data):
+        """Calculate max pain (simplified)"""
+        # This is a simplified version - real max pain requires full chain analysis
+        price = chain_data['underlying_price']
+        return f"~{round(price * 0.98)}-{round(price * 1.02)}"
