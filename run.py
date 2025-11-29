@@ -14,7 +14,7 @@ from data_fetcher import DataFetcher
 from data_processor import DataProcessor
 from combined_analyzer import CombinedAnalyzer
 from report_generator import ReportGenerator
-from config.settings import STRATEGY_CONFIG, ANALYSIS_CONFIG  # Fixed import
+from config.settings import STRATEGY_CONFIG, ANALYSIS_CONFIG
 
 def main():
     print("Run Combined Futures & Options Analysis")
