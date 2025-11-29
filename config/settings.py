@@ -21,13 +21,14 @@ NSE_BHAVCOPY_BASE_URL = "https://archives.nseindia.com/content/fo"
 NSE_BHAVCOPY_FILENAME_FORMAT = "BhavCopy_NSE_FO_0_0_0_{date}_F_0000.csv.zip"
 
 # Data Processing
+
 NSE_COLUMN_MAPPING = {
     'futures': {
         'TckrSymb': 'symbol',
         'UndrlygPric': 'underlying', 
         'LastPric': 'lastPrice',
         'OpnIntrst': 'openInterest',
-        'TLITradgVol': 'volume',
+        'TtlTradgVol': 'volume',
         'HghPric': 'highPrice',
         'LwPric': 'lowPrice',
         'OpnPric': 'openPrice',
@@ -41,7 +42,7 @@ NSE_COLUMN_MAPPING = {
         'OptnTp': 'optionType',
         'LastPric': 'lastPrice',
         'OpnIntrst': 'openInterest',
-        'TLITradgVol': 'volume',
+        'TtlTradgVol': 'volume',
         'HghPric': 'highPrice',
         'LwPric': 'lowPrice',
         'OpnPric': 'openPrice',
