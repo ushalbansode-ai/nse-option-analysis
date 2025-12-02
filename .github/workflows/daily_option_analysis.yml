@@ -12,19 +12,18 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     
+    - name: Download previous historical data
+      uses: actions/download-artifact@v4
+      if: always()
+      with:
+        name: nse-historical-data
+        path: data/processed/
+        continue-on-error: true
+    
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.10'
-    
-    - name: Cache historical data
-      uses: actions/cache@v3
-      id: data-cache
-      with:
-        path: data/processed
-        key: ${{ runner.os }}-nse-processed-data-${{ hashFiles('src/data_processor.py', 'run.py') }}
-        restore-keys: |
-          ${{ runner.os }}-nse-processed-data-
     
     - name: Install dependencies
       run: |
@@ -39,28 +38,37 @@ jobs:
         mkdir -p outputs/reports
         echo "Directories created successfully"
     
-    - name: Show cache status
+    - name: Check existing historical data
       run: |
+        echo "=== Checking existing historical data ==="
         if [ -d "data/processed" ]; then
           echo "✅ Processed data directory exists"
           ls -la data/processed/
+          echo ""
+          echo "=== CSV files found ==="
+          find data/processed -name "*.csv" -type f | sort
         else
-          echo "⚠️ Processed data directory not found (first run or cache miss)"
+          echo "❌ No processed data directory found"
         fi
     
     - name: Run analysis
       run: python run.py
+    
+    - name: Upload new historical data
+      uses: actions/upload-artifact@v4
+      with:
+        name: nse-historical-data
+        path: data/processed/
+        retention-days: 90
+        if-no-files-found: warn
     
     - name: List generated files
       run: |
         echo "=== Generated Reports ==="
         find outputs/ -type f -name "*.txt" -o -name "*.csv" | sort || echo "No reports found"
         echo ""
-        echo "=== Historical Data Files ==="
-        find data/processed/ -type f -name "*.csv" 2>/dev/null | sort || echo "No historical data files"
-        echo ""
-        echo "=== Cache Info ==="
-        echo "Cache hit: ${{ steps.data-cache.outputs.cache-hit }}"
+        echo "=== New Historical Data ==="
+        find data/processed -name "*.csv" -type f | sort || echo "No new historical data"
     
     - name: Commit and push results
       env:
@@ -70,4 +78,5 @@ jobs:
         git config --local user.name "GitHub Action"
         git add outputs/
         git status
-        git diff --cached --quiet || (git commit -m "Update NSE analysis reports $(date +'%Y-%m-%d %H:%M:%S')" && git push)
+        git commit -m "Update NSE analysis reports $(date +'%Y-%m-%d %H:%M:%S')" || echo "No changes to commit"
+        git push
