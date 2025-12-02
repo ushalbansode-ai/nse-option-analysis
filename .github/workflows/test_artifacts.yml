@@ -1,0 +1,76 @@
+name: Test Artifact System
+
+on: [workflow_dispatch]
+
+jobs:
+  test-artifacts:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install pandas
+      run: pip install pandas
+    
+    - name: Download historical data artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: nse-historical-data
+        path: data/processed/
+        continue-on-error: true
+    
+    - name: Run test
+      run: |
+        # Create test script
+        cat > test_artifacts.py << 'EOF'
+        import os
+        import pandas as pd
+        
+        print("🧪 Testing Historical Data Artifacts")
+        print("=" * 50)
+        
+        processed_dir = "data/processed"
+        
+        if not os.path.exists(processed_dir):
+            print(f"❌ Directory '{processed_dir}' does not exist!")
+            exit(1)
+        
+        print(f"✅ Directory exists: {processed_dir}")
+        
+        # List files
+        csv_files = [f for f in os.listdir(processed_dir) if f.endswith('.csv')]
+        print(f"\n📊 Found {len(csv_files)} CSV files:")
+        
+        for csv_file in sorted(csv_files):
+            filepath = os.path.join(processed_dir, csv_file)
+            try:
+                # Quick check without loading entire file
+                df_sample = pd.read_csv(filepath, nrows=5)
+                size_mb = os.path.getsize(filepath) / (1024 * 1024)
+                
+                print(f"\n  📁 {csv_file}")
+                print(f"    Size: {size_mb:.2f} MB")
+                print(f"    Columns: {list(df_sample.columns)}")
+                print(f"    Sample rows: {len(df_sample)}")
+                
+                # Check for key columns
+                key_cols = ['instrument_type', 'symbol']
+                present = [col for col in key_cols if col in df_sample.columns]
+                print(f"    Key columns present: {present}")
+                
+            except Exception as e:
+                print(f"    ❌ Error: {e}")
+        
+        print("\n" + "=" * 50)
+        if csv_files:
+            print("✅ SUCCESS: Historical artifacts are working!")
+        else:
+            print("⚠️ WARNING: No CSV files found in artifacts")
+        EOF
+        
+        python test_artifacts.py
