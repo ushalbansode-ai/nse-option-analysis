@@ -9,13 +9,6 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     
-    - name: Cache historical data
-      uses: actions/cache@v3
-      id: data-cache
-      with:
-        path: data/processed
-        key: ${{ runner.os }}-nse-processed-data-${{ hashFiles('src/data_processor.py', 'run.py') }}
-    
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
@@ -24,23 +17,27 @@ jobs:
     - name: Install pandas
       run: pip install pandas
     
+    - name: Download historical data artifact (if exists)
+      uses: actions/download-artifact@v4
+      continue-on-error: true
+      with:
+        name: nse-historical-data
+        path: data/processed/
+    
     - name: Debug data directory
       run: |
         echo "=== Debug Information ==="
         echo "Current directory: $(pwd)"
         echo ""
         echo "=== Directory structure ==="
-        find . -type f -name "*.csv" -o -name "*.txt" | grep -E "(data|outputs)" | sort
-        echo ""
-        echo "=== Cache status ==="
-        echo "Cache hit: ${{ steps.data-cache.outputs.cache-hit }}"
+        find . -type f -name "*.csv" -o -name "*.txt" | grep -E "(data|outputs)" | sort || echo "No data files found"
         echo ""
         echo "=== Processed data directory ==="
         if [ -d "data/processed" ]; then
           echo "✅ Directory exists"
           ls -la data/processed/
           
-          if [ "$(ls -A data/processed/*.csv 2>/dev/null | wc -l)" -gt 0 ]; then
+          if ls data/processed/*.csv 1> /dev/null 2>&1; then
             echo ""
             echo "=== CSV File Details ==="
             for file in data/processed/*.csv; do
@@ -53,5 +50,5 @@ jobs:
             echo "❌ No CSV files found in processed directory"
           fi
         else
-          echo "❌ Directory doesn't exist"
+          echo "❌ Directory doesn't exist (artifact not downloaded or first run)"
         fi
