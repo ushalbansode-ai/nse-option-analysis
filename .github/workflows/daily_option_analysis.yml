@@ -34,7 +34,7 @@ jobs:
       uses: actions/download-artifact@v4
       continue-on-error: true  # This is for the STEP, not the action
       with:
-        name: nse-historical-data
+        name: xml-historical-data
         path: data/processed/
     
     - name: Check downloaded historical data
@@ -58,7 +58,7 @@ jobs:
     - name: Upload new historical data
       uses: actions/upload-artifact@v4
       with:
-        name: nse-historical-data
+        name: xml-historical-data
         path: data/processed/
         retention-days: 90
         if-no-files-found: ignore
