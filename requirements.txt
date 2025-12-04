@@ -1,4 +1,6 @@
-pandas>=1.5
+requests
+pandas
+pyarrow
+fastparquet
 pyyaml
 numpy
-python-dateutil
