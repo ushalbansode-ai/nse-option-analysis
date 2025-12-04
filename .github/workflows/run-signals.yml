@@ -1,1 +1,50 @@
+name: Run NSE FO Signals
 
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "data/raw/**"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          pip install pandas pyarrow fastparquet
+
+      - name: Run full pipeline
+        run: |
+          echo "Running NSE FO pipeline..."
+          python3 src/run_all.py
+
+      - name: List output files
+        run: |
+          echo "Generated files:"
+          ls -R data/signals || true
+          ls -R data/history || true
+
+      - name: Commit updated history + signals
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+          git add data/history/* data/signals/* || true
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Auto-update: new FO bhavcopy processed"
+            git push
+          fi
+          
