@@ -1,50 +1,58 @@
-name: Run NSE FO Signals
+name: Auto FO Fetch + Signals + Dashboard
+python -m pip install --upgrade pip
+pip install -r requirements.txt
 
-on:
-  workflow_dispatch:
-  push:
-    paths:
-      - "data/raw/**"
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
+- name: Check NSE market holiday
+run: |
+python - << 'EOF'
+from src.is_holiday import today_is_market_holiday
+if today_is_market_holiday():
+print('Market Holiday — skipping job.')
+exit(0)
+EOF
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.10"
+- name: Fetch bhavcopy (download & extract)
+run: |
+python scripts/download_bhavcopy.py
 
-      - name: Install dependencies
-        run: |
-          pip install pandas pyarrow fastparquet
 
-      - name: Run full pipeline
-        run: |
-          echo "Running NSE FO pipeline..."
-          python3 src/run_all.py
+- name: Run full pipeline (clean, merge, compare)
+run: |
+python src/run_all.py
 
-      - name: List output files
-        run: |
-          echo "Generated files:"
-          ls -R data/signals || true
-          ls -R data/history || true
 
-      - name: Commit updated history + signals
-        run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
+- name: Build dashboard (optional)
+run: |
+if [ -f scripts/build_dashboard.py ]; then
+python scripts/build_dashboard.py
+else
+echo "No build_dashboard.py found — skipping."
+fi
 
-          git add data/history/* data/signals/* || true
 
-          if git diff --cached --quiet; then
-            echo "No changes to commit."
-          else
-            git commit -m "Auto-update: new FO bhavcopy processed"
-            git push
-          fi
-          
+- name: Show generated outputs
+run: |
+echo "Signals:"
+ls -la data/signals || true
+echo "History files:"
+ls -la data/history || true
+echo "Docs (dashboard) files:"
+ls -la docs || true
+
+
+- name: Commit and push updates
+env:
+GIT_AUTHOR_NAME: github-actions
+GIT_AUTHOR_EMAIL: actions@github.com
+run: |
+git config user.name "${GIT_AUTHOR_NAME}"
+git config user.email "${GIT_AUTHOR_EMAIL}"
+git add data/history data/signals docs || true
+if git diff --cached --quiet; then
+echo "No changes to commit."
+else
+git commit -m "Auto update: bhavcopy processed and signals $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+git push
+fi
