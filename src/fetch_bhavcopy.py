@@ -1,52 +1,57 @@
 import os
-import zipfile
 import requests
-import datetime
-import pandas as pd
+import zipfile
+from datetime import datetime
 
-RAW_DIR = "data/raw/"
-
-NSE_URL = "https://www.nseindia.com/api/reports?archive=true&date={DATE}&type=derivatives&mode=FO"
+RAW_DIR = "data/raw"
+PROCESSED_DIR = "data/processed"
 
 
 def ensure_dirs():
-    os.makedirs(RAW_DIR, exist_ok=True)
+    for d in [RAW_DIR, PROCESSED_DIR]:
+        os.makedirs(d, exist_ok=True)
 
 
-def fetch_bhavcopy(date=None):
+def fetch_bhavcopy():
     ensure_dirs()
 
-    if date is None:
-        date = datetime.datetime.now().strftime("%d-%m-%Y")
+    today = datetime.now().strftime("%d-%m-%Y")
+    zip_name = f"bhav_{today}.zip"
+    zip_path = os.path.join(RAW_DIR, zip_name)
 
-    print(f"[INFO] Downloading bhavcopy for {date}")
+    url = f"https://www1.nseindia.com/content/historical/DERIVATIVES/{today}/fo.zip"
 
-    url = NSE_URL.replace("{DATE}", date)
+    print(f"[INFO] Downloading bhavcopy for {today}")
 
     headers = {
         "User-Agent": "Mozilla/5.0",
-        "Accept": "*/*",
-        "Referer": "https://www.nseindia.com",
+        "Referer": "https://www1.nseindia.com/products/content/derivatives/equities/historical_fo.htm"
     }
 
-    r = requests.get(url, headers=headers)
-    if r.status_code != 200:
-        print("Download failed:", r.status_code)
+    try:
+        r = requests.get(url, headers=headers, timeout=20)
+    except Exception as e:
+        print("[ERROR] Network error:", e)
         return None
 
-    zip_path = RAW_DIR + f"bhav_{date}.zip"
+    # Save file
     with open(zip_path, "wb") as f:
         f.write(r.content)
 
     print("[INFO] ZIP saved:", zip_path)
 
-    # Extract CSV
-    with zipfile.ZipFile(zip_path, "r") as z:
-        csv_name = z.namelist()[0]
-        z.extract(csv_name, RAW_DIR)
-
-    extracted_csv = RAW_DIR + csv_name
-    print("[INFO] Extracted CSV:", extracted_csv)
-
-    return extracted_csv
-  
+    # ---------------------------------------------------------
+    # VALIDATE ZIP — check if real zip or HTML error
+    # ---------------------------------------------------------
+    try:
+        with zipfile.ZipFile(zip_path, "r") as z:
+            z.extractall(RAW_DIR)
+            files = z.namelist()
+            print("[INFO] Extracted:", files)
+            return max(files)  # return CSV name
+    except zipfile.BadZipFile:
+        print("[WARNING] NSE returned a NON-ZIP file (HTML error page)")
+        print("[WARNING] Removing bad file:", zip_path)
+        os.remove(zip_path)
+        return None
+        
