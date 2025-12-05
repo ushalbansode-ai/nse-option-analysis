@@ -1,27 +1,33 @@
-import pandas as pd
-import datetime
 import os
-
-RAW_DIR = "data/raw/"
-PROCESSED_DIR = "data/processed/"
+import pandas as pd
 
 
-def ensure_dirs():
-    os.makedirs(RAW_DIR, exist_ok=True)
-    os.makedirs(PROCESSED_DIR, exist_ok=True)
+def ensure_folder(path):
+    """Create folder if not exists."""
+    os.makedirs(path, exist_ok=True)
 
 
-def get_latest_two_files():
-    ensure_dirs()
-    files = sorted(os.listdir(RAW_DIR))
-    csv_files = [f for f in files if f.endswith(".csv")]
+def load_csv_safely(path):
+    """
+    Load CSV file safely.
+    If file missing → return empty DataFrame.
+    """
+    if not os.path.exists(path):
+        print(f"⚠️ CSV not found: {path}")
+        return pd.DataFrame()
 
-    if len(csv_files) < 2:
-        return None, None
+    try:
+        return pd.read_csv(path)
+    except Exception as e:
+        print(f"❌ Error loading CSV {path} → {e}")
+        return pd.DataFrame()
 
-    return csv_files[-2], csv_files[-1]
 
-
-def load_csv(path):
-    return pd.read_csv(path)
-  
+def save_csv_safely(df, path):
+    """Save CSV safely."""
+    try:
+        df.to_csv(path, index=False)
+        print(f"✅ Saved: {path}")
+    except Exception as e:
+        print(f"❌ Failed to save CSV {path}: {e}")
+        
