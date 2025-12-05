@@ -1,50 +1,62 @@
-from fetch_bhavcopy import fetch_bhavcopy
-from compare_engine import parse_csv
-
-from dashboard import build_dashboard
 import os
+import pandas as pd
+
+from fetch_bhavcopy import download_bhavcopy
+from utils import load_csv_safely
+from compare_engine import detect_signals
+from signal_engine import save_signals
+from scripts.build_dashboard import build_html_dashboard
 
 
-def main():
+RAW_DIR = "data/raw"
+PROCESSED_DIR = "data/processed"
+SIGNALS_DIR = "data/signals"
 
-    print("[STEP] Fetching bhavcopy…")
-    csv_today = fetch_bhavcopy()     # ← csv_today created here
 
-    # -------------------------------------------------
-    # If no fresh bhavcopy available
-    # -------------------------------------------------
-    if csv_today is None:
-        print("[WARNING] No new bhavcopy downloaded.")
-        print("[INFO] Checking last available CSV…")
+def ensure_dirs():
+    for d in [RAW_DIR, PROCESSED_DIR, SIGNALS_DIR]:
+        os.makedirs(d, exist_ok=True)
 
-        raw_files = [
-            f for f in os.listdir("data/raw") if f.endswith(".csv")
-        ]
 
-        if not raw_files:
-            print("[FATAL] No CSV files exist in data/raw/. Cannot continue.")
-            return
+def run_pipeline():
+    print("🔽 Downloading today BhavCopy...")
+    today_csv = download_bhavcopy(RAW_DIR)
+    if today_csv is None:
+        print("❌ ERROR: Bhavcopy download failed.")
+        return
 
-        csv_today = sorted(raw_files)[-1]
-        print(f"[INFO] Using previous CSV: {csv_today}")
+    print("📥 Loading today CSV...")
+    today_df = load_csv_safely(today_csv)
+    if today_df is None or today_df.empty:
+        print("❌ ERROR: Today CSV empty or unreadable.")
+        return
 
-    print(f"[INFO] Processing CSV: {csv_today}")
+    # Find previous processed file
+    prev_files = sorted(os.listdir(PROCESSED_DIR))
+    prev_df = pd.DataFrame()
 
-    # -------------------------------------------------
-    # Parse & compute signals
-    # -------------------------------------------------
-    df_today = parse_csv(csv_today)
+    if prev_files:
+        prev_csv = os.path.join(PROCESSED_DIR, prev_files[-1])
+        print(f"📥 Loading previous file: {prev_csv}")
+        prev_df = load_csv_safely(prev_csv)
 
-    df_signals = compare_signals(df_today)
+    # Save today's file as processed snapshot
+    processed_path = os.path.join(PROCESSED_DIR, os.path.basename(today_csv))
+    today_df.to_csv(processed_path, index=False)
 
-    # -------------------------------------------------
-    # Build dashboard
-    # -------------------------------------------------
-    build_dashboard(df_signals)
+    print("📊 Comparing today vs previous & generating signals...")
+    signals_df = detect_signals(prev_df, today_df)
 
-    print("[DONE] Signals + Dashboard updated.")
+    signals_path = os.path.join(SIGNALS_DIR, "signals_latest.csv")
+    save_signals(signals_df, signals_path)
+
+    print("🌐 Rebuilding dashboard...")
+    build_html_dashboard(signals_df)
+
+    print("✅ DONE — Pipeline completed successfully!")
 
 
 if __name__ == "__main__":
-    main()
+    ensure_dirs()
+    run_pipeline()
     
