@@ -7,7 +7,7 @@ class DataProcessor:
     def __init__(self):
         pass
     
-    def process_option_chain(self, raw_ Dict) -> Dict:
+    def process_option_chain(self, raw_data: Dict) -> Dict:
         if not raw_data or 'filtered' not in raw_
             return {}
         
