@@ -33,12 +33,12 @@ class OptionAnalysisEngine:
         
         try:
             raw_data = self.fetcher.fetch_option_chain(symbol)
-            if not raw_
+            if not raw_data:
                 self.logger.error(f"Failed to fetch data for {symbol}")
                 return {}
             
             processed_data = self.processor.process_option_chain(raw_data)
-            if not processed_
+            if not processed_data:
                 self.logger.error(f"Failed to process data for {symbol}")
                 return {}
             
@@ -54,7 +54,7 @@ class OptionAnalysisEngine:
             puts = self.underrating_analyzer.analyze_bid_ask_spread(puts)
             puts = self.underrating_analyzer.analyze_oi_concentration(puts)
             
-            # Calculate composite scores
+            # Calculate composite scores (simplified for now)
             calls['composite_score'] = 0.5  # Placeholder - implement proper scoring
             puts['composite_score'] = 0.5   # Placeholder - implement proper scoring
             
