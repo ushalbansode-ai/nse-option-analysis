@@ -1,35 +1,9 @@
-# Python
+*.pyc
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-env/
+.env
 venv/
-ENV/
-env.bak/
-venv.bak/
-
-# Data files
-data/raw/zips/
-data/raw/*.csv
-!data/raw/.gitkeep
-data/previous.csv
-data/signals.csv
-
-# IDE
+*.log
+.DS_Store
 .vscode/
 .idea/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Logs
-*.log
-
-# Temporary files
-temp/
-tmp/
+results/
