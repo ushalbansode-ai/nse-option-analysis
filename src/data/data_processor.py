@@ -8,17 +8,18 @@ class DataProcessor:
         pass
     
     def process_option_chain(self, raw_data: Dict) -> Dict:
-        if not raw_data or 'filtered' not in raw_
+        # Validate input
+        if not raw_data or 'filtered' not in raw_data:
             return {}
         
         filtered_data = raw_data['filtered']
-        records = filtered_data['data']
+        records = filtered_data.get('data', [])
         
         call_data = []
         put_data = []
         
         for record in records:
-            expiry_date = record['expiryDate']
+            expiry_date = record.get('expiryDate')
             
             if 'CE' in record:
                 ce_data = record['CE']
@@ -39,3 +40,4 @@ class DataProcessor:
             'timestamp': raw_data.get('timestamp'),
             'underlying_value': raw_data.get('underlyingValue', 0.0)
         }
+        
