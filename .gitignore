@@ -1,9 +1,6 @@
-*.pyc
-__pycache__/
-.env
-venv/
-*.log
-.DS_Store
-.vscode/
-.idea/
 results/
+*.log
+__pycache__/
+.cache/
+.env
+
