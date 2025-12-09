@@ -1,43 +1,43 @@
 import pandas as pd
-import numpy as np
 from typing import Dict
-import json
+from src.utils.logger import get_logger
 
 class DataProcessor:
     def __init__(self):
-        pass
-    
+        self.logger = get_logger(__name__)
+
     def process_option_chain(self, raw_data: Dict) -> Dict:
-        # Validate input
-        if not raw_data or 'filtered' not in raw_data:
+        if not raw_data or "filtered" not in raw_data:
+            self.logger.error("Invalid raw_data: missing 'filtered'")
             return {}
-        
-        filtered_data = raw_data['filtered']
-        records = filtered_data.get('data', [])
-        
-        call_data = []
-        put_data = []
-        
-        for record in records:
-            expiry_date = record.get('expiryDate')
-            
-            if 'CE' in record:
-                ce_data = record['CE']
-                ce_data['expiryDate'] = expiry_date
-                call_data.append(ce_data)
-            
-            if 'PE' in record:
-                pe_data = record['PE']
-                pe_data['expiryDate'] = expiry_date
-                put_data.append(pe_data)
-        
-        calls_df = pd.DataFrame(call_data)
-        puts_df = pd.DataFrame(put_data)
-        
+
+        filtered = raw_data["filtered"]
+        records = filtered.get("data", [])
+        if not isinstance(records, list):
+            self.logger.error("Invalid 'data' format in raw_data")
+            return {}
+
+        call_rows, put_rows = [], []
+        for rec in records:
+            expiry = rec.get("expiryDate")
+            if "CE" in rec:
+                ce = dict(rec["CE"])
+                ce["optionType"] = "CE"
+                ce["expiryDate"] = expiry
+                call_rows.append(ce)
+            if "PE" in rec:
+                pe = dict(rec["PE"])
+                pe["optionType"] = "PE"
+                pe["expiryDate"] = expiry
+                put_rows.append(pe)
+
+        calls = pd.DataFrame(call_rows)
+        puts = pd.DataFrame(put_rows)
+
         return {
-            'calls': calls_df,
-            'puts': puts_df,
-            'timestamp': raw_data.get('timestamp'),
-            'underlying_value': raw_data.get('underlyingValue', 0.0)
+            "calls": calls,
+            "puts": puts,
+            "timestamp": raw_data.get("records", {}).get("timestamp") or raw_data.get("timestamp"),
+            "underlying_value": raw_data.get("records", {}).get("underlyingValue") or raw_data.get("underlyingValue", 0.0),
         }
         
