@@ -7,14 +7,14 @@ class DataProcessor:
         self.logger = get_logger(__name__)
 
     def process_option_chain(self, raw_data: Dict) -> Dict:
-        if not raw_data or "filtered" not in raw_data:
-            self.logger.error("Invalid raw_data: missing 'filtered'")
+        if not raw_data:
+            self.logger.error("Empty raw_data")
             return {}
 
-        filtered = raw_data["filtered"]
-        records = filtered.get("data", [])
-        if not isinstance(records, list):
-            self.logger.error("Invalid 'data' format in raw_data")
+        # NSE sometimes uses 'filtered' or 'records' for option chain data
+        records = raw_data.get("filtered", {}).get("data") or raw_data.get("records", {}).get("data")
+        if not records:
+            self.logger.error("No option chain data found in raw_data")
             return {}
 
         call_rows, put_rows = [], []
