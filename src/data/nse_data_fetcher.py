@@ -1,56 +1,41 @@
-import requests
-import time
-import random
-from datetime import datetime
-import json
-import pandas as pd
-from typing import Dict, Optional
+import requests, time
+from typing import Dict
+from src.config import AppConfig
+from src.utils.logger import get_logger
+from src.data.cache_manager import CacheManager
+from src.utils.helpers import throttle
 
 class NSEDataFetcher:
-    def __init__(self):
-        self.base_url = "https://www.nseindia.com"
+    INDEX_URL = "https://www.nseindia.com/api/option-chain-indices"
+
+    def __init__(self, config: AppConfig = AppConfig()):
+        self.config = config
+        self.logger = get_logger(__name__)
         self.session = requests.Session()
-        self._setup_session()
+        self.session.headers.update({
+            "User-Agent": self.config.user_agent,
+            "Accept": "application/json",
+            "Referer": "https://www.nseindia.com/"
+        })
+        self.cache = CacheManager(ttl_seconds=config.cache_ttl_seconds)
+
+    def fetch_option_chain(self, symbol: str) -> Dict:
+        cache_key = f"option_chain_{symbol}"
+        cached = self.cache.get(cache_key)
+        if cached:
+            return cached
+
+        url = f"{self.INDEX_URL}?symbol={symbol}"
+        throttle(self.config.throttle_seconds)
+        for attempt in range(1, self.config.max_retries + 1):
+            try:
+                resp = self.session.get(url, timeout=self.config.request_timeout)
+                resp.raise_for_status()
+                data = resp.json()
+                self.cache.set(cache_key, data)
+                return data
+            except Exception as e:
+                self.logger.warning(f"Attempt {attempt} failed: {e}")
+                time.sleep(self.config.retry_backoff_seconds)
+        return {}
         
-    def _setup_session(self):
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept': '*/*',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Connection': 'keep-alive',
-        }
-        self.session.headers.update(headers)
-        
-    def get_cookies(self):
-        try:
-            response = self.session.get(self.base_url)
-            return response.cookies
-        except Exception as e:
-            print(f"Error getting cookies: {e}")
-            return None
-    
-    def fetch_option_chain(self, symbol: str) -> Optional[Dict]:
-        cookies = self.get_cookies()
-        if not cookies:
-            return None
-            
-        time.sleep(random.uniform(2, 4))  # Rate limiting
-        
-        url = f"{self.base_url}/api/option-chain-equities?symbol={symbol.upper()}"
-        
-        try:
-            response = self.session.get(
-                url,
-                cookies=cookies,
-                headers={'Referer': self.base_url}
-            )
-            
-            if response.status_code == 200:
-                return response.json()
-            else:
-                print(f"Error: {response.status_code}")
-                return None
-        except Exception as e:
-            print(f"Exception: {e}")
-            return None
